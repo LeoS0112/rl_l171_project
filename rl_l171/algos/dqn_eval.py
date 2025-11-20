@@ -12,7 +12,7 @@ def evaluate(
     env_id: str,
     eval_episodes: int,
     run_name: str,
-    Model: torch.nn.Module,
+    Model: type[torch.nn.Module],
     device: torch.device = torch.device("cpu"),
     epsilon: float = 0.05,
     capture_video: bool = True,
