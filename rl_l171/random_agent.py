@@ -6,14 +6,22 @@ import numpy as np
 
 from rl_l171.gym_env import CubesGymEnv
 
-env = CubesGymEnv(render_mode="None", max_nr_steps=100, randomise_initial_position=True,
-                  seed=5, nr_cubes=10)
+env = CubesGymEnv(
+    render_mode="None",
+    max_nr_steps=100,
+    randomise_initial_position=True,
+    seed=5,
+    nr_cubes=10,
+)
 
 env = gym.wrappers.ClipAction(env)
+
+
 class RandomAgent:
     """
     An agent that selects actions uniformly at random from the environment's action space.
     """
+
     def __init__(self, action_space: spaces.Box):
         """
         Initialize the RandomAgent with the environment's action space.
@@ -39,7 +47,8 @@ class RandomAgent:
     def train(self) -> None:
         pass
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     obs, info = env.reset(seed=0)
     done = False
     episode_reward = 0

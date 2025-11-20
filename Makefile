@@ -1,2 +1,5 @@
 fmt:
-	ruff .
+	ruff format .
+
+lint:
+	ruff check .

@@ -13,7 +13,7 @@ XML_DIR = os.path.join(ASSETS_DIR, "xmls")
 
 
 def _format_array(np_array, precision=6):
-    """ Format numpy array into a nice string suitable for mujoco XML """
+    """Format numpy array into a nice string suitable for mujoco XML"""
     if not isinstance(np_array, np.ndarray):
         np_array = np.array(np_array, dtype=float)
 
@@ -40,7 +40,7 @@ class MujocoXML:
 
     TEXTURE_ATTRIBUTES = [
         "file",
-        "fileback" "filedown",
+        "filebackfiledown",
         "filefront",
         "fileleft",
         "fileright",
@@ -69,14 +69,14 @@ class MujocoXML:
         "target",
         "tendon",
         "texture",
-        "instance"
+        "instance",
     }
 
     ###############################################################################################
     # CONSTRUCTION
     @classmethod
     def parse(cls, xml_filename: str) -> "MujocoXML":
-        """ Parse given xml file into the MujocoXML object """
+        """Parse given xml file into the MujocoXML object"""
         xml_full_path = os.path.join(XML_DIR, xml_filename)
         if not os.path.exists(xml_full_path):
             raise FileNotFoundError(f"XML file not found: {xml_full_path}")
@@ -90,14 +90,14 @@ class MujocoXML:
 
     @classmethod
     def from_string(cls, contents: str) -> "MujocoXML":
-        """ Constructs a MujocoXML object from an XML string"""
+        """Constructs a MujocoXML object from an XML string"""
         xml_root = et.fromstring(contents)
         xml = cls(xml_root)
         xml.load_includes()
         return xml
 
     def __init__(self, root_element: typing.Optional[et.Element] = None):
-        """ Create new MujocoXML object """
+        """Create new MujocoXML object"""
         # This is the root element of the XML document we'll be modifying
         if root_element is None:
             # Create empty root element
@@ -109,7 +109,7 @@ class MujocoXML:
     ###############################################################################################
     # COMBINING MUJOCO ELEMENTS
     def add_default_compiler_directive(self) -> "MujocoXML":
-        """ Add a default compiler directive """
+        """Add a default compiler directive"""
         self.root_element.append(
             et.Element(
                 "compiler",
@@ -143,10 +143,10 @@ class MujocoXML:
         return self
 
     def xml_string(self) -> str:
-        """ Return combined XML as a string """
+        """Return combined XML as a string"""
         return et.tostring(self.root_element, encoding="unicode", method="xml")
 
-    def load_includes(self, include_root:str="") -> "MujocoXML":
+    def load_includes(self, include_root: str = "") -> "MujocoXML":
         """
         Some mujoco files contain includes that need to be process on our side of the system
         Find all elements that have an 'include' child ==> find all `<include>` tags and
@@ -199,8 +199,10 @@ class MujocoXML:
 
                     texture.set(attribute, fname)
 
-    def build(self, output_filename=None, meshdir=None, texturedir=None) -> mujoco.MjModel:
-        """ Build and return a mujoco simulation """
+    def build(
+        self, output_filename=None, meshdir=None, texturedir=None
+    ) -> mujoco.MjModel:
+        """Build and return a mujoco simulation"""
         self._resolve_asset_paths(meshdir, texturedir)
 
         xml_string = self.xml_string()
@@ -214,7 +216,7 @@ class MujocoXML:
     ###############################################################################################
     # MODIFICATIONS
     def set_objects_attr(self, tag: str = "*", **kwargs):
-        """ Set given attribute to all instances of given tag within the tree """
+        """Set given attribute to all instances of given tag within the tree"""
         for element in self.root_element.findall(".//{}".format(tag)):
             for name, value in kwargs.items():
                 if isinstance(value, (list, np.ndarray)):
@@ -232,7 +234,7 @@ class MujocoXML:
             self.set_objects_attr(tag=tag, **args)
 
     def set_named_objects_attr(self, name: str, tag: str = "*", **kwargs):
-        """ Sets xml attributes of all objects with given name """
+        """Sets xml attributes of all objects with given name"""
         for element in self.root_element.findall(".//{}[@name='{}']".format(tag, name)):
             for name, value in kwargs.items():
                 if isinstance(value, (list, np.ndarray)):
@@ -243,7 +245,7 @@ class MujocoXML:
         return self
 
     def set_prefixed_objects_attr(self, prefix: str, tag: str = "*", **kwargs):
-        """ Sets xml attributes of all objects with given name prefix """
+        """Sets xml attributes of all objects with given name prefix"""
         for element in self.root_element.findall(".//{}[@name]".format(tag)):
             if element.get("name").startswith(prefix):  # type: ignore
                 for name, value in kwargs.items():
@@ -265,8 +267,8 @@ class MujocoXML:
         for element in self.root_element.iter():
             for attrib_name in element.keys():
                 if (
-                        attrib_name not in self.NAMED_FIELDS
-                        or attrib_name in exclude_attribs
+                    attrib_name not in self.NAMED_FIELDS
+                    or attrib_name in exclude_attribs
                 ):
                     continue
 
@@ -281,17 +283,19 @@ class MujocoXML:
         for element in self.root_element.iter():
             for attrib_name in element.keys():
                 if (
-                        attrib_name not in self.NAMED_FIELDS
-                        or attrib_name in exclude_attribs
+                    attrib_name not in self.NAMED_FIELDS
+                    or attrib_name in exclude_attribs
                 ):
                     continue
 
-                element.set(attrib_name, element.get(attrib_name).replace(old_name, new_name))  # type: ignore
+                element.set(
+                    attrib_name, element.get(attrib_name).replace(old_name, new_name)
+                )  # type: ignore
 
         return self
 
     def remove_objects_by_tag(self, tag: str):
-        """ Remove objects with given tag from XML """
+        """Remove objects with given tag from XML"""
         for element in self.root_element.findall(".//{}/..".format(tag)):
             for subelement in list(element):
                 if subelement.tag != tag:
@@ -301,7 +305,7 @@ class MujocoXML:
         return self
 
     def remove_objects_by_prefix(self, prefix: str, tag: str = "*"):
-        """ Remove objects with given name prefix from XML """
+        """Remove objects with given name prefix from XML"""
         for element in self.root_element.findall(".//{}[@name]/..".format(tag)):
             for subelement in list(element):
                 if subelement.get("name").startswith(prefix):  # type: ignore
@@ -310,19 +314,18 @@ class MujocoXML:
         return self
 
     def remove_objects_by_name(
-            self, names: typing.Union[typing.List[str], str], tag: str = "*"
+        self, names: typing.Union[typing.List[str], str], tag: str = "*"
     ):
-        """ Remove object with given name from XML """
+        """Remove object with given name from XML"""
         if isinstance(names, str):
             names = [names]
 
         for name in names:
             for element in self.root_element.findall(
-                    ".//{}[@name='{}']/..".format(tag, name)
+                ".//{}[@name='{}']/..".format(tag, name)
             ):
                 for subelement in list(element):
                     if subelement.get("name") == name:
                         element.remove(subelement)
 
         return self
-

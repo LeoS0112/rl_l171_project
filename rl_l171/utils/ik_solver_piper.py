@@ -6,10 +6,12 @@ import mujoco
 import numpy as np
 import time
 from pathlib import Path
+
 try:
     import viser
     from viser.extras import ViserUrdf
     import yourdfpy
+
     VISER_AVAILABLE = True
 except ImportError:
     VISER_AVAILABLE = False
@@ -17,16 +19,17 @@ except ImportError:
 DAMPING_COEFF = 1e-12
 MAX_ANGLE_CHANGE = np.deg2rad(45)
 
+
 class IKSolver:
     def __init__(self, enable_viz=False):
         # Load arm without gripper
-        self.model = mujoco.MjModel.from_xml_path('rl_l171/assets/xmls/piper/piper.xml')
+        self.model = mujoco.MjModel.from_xml_path("rl_l171/assets/xmls/piper/piper.xml")
         self.data = mujoco.MjData(self.model)
         self.model.body_gravcomp[:] = 1.0
 
         # Cache references
-        self.qpos0 = self.model.key('home').qpos
-        self.site_id = self.model.site('pinch_site').id
+        self.qpos0 = self.model.key("home").qpos
+        self.site_id = self.model.site("pinch_site").id
         self.site_pos = self.data.site(self.site_id).xpos
         self.site_mat = self.data.site(self.site_id).xmat
 
@@ -47,7 +50,7 @@ class IKSolver:
         self.viser_urdf = None
         self.target_frame = None
         self.result_frame = None
-        
+
         if self.enable_viz:
             self._setup_visualization()
 
@@ -55,7 +58,7 @@ class IKSolver:
         """Initialize viser server and robot visualization"""
         # Start viser server
         self.server = viser.ViserServer()
-        
+
         # Load URDF for visualization
         urdf_path = "models/piper_description.urdf"
         urdf_file = Path(urdf_path)
@@ -63,7 +66,7 @@ class IKSolver:
             print(f"Warning: URDF file not found for visualization: {urdf_path}")
             self.enable_viz = False
             return
-    
+
         try:
             urdf = yourdfpy.URDF.load(
                 str(urdf_file),
@@ -72,14 +75,14 @@ class IKSolver:
                 load_collision_meshes=False,
                 build_collision_scene_graph=False,
             )
-            
+
             self.viser_urdf = ViserUrdf(
                 self.server,
                 urdf_or_path=urdf,
                 load_meshes=True,
                 load_collision_meshes=False,
             )
-            
+
             # Create coordinate frames for target and result
             self.target_frame = self.server.scene.add_frame(
                 "/target_pose",
@@ -88,15 +91,15 @@ class IKSolver:
                 axes_length=0.1,
                 axes_radius=0.005,
             )
-            
+
             self.result_frame = self.server.scene.add_frame(
-                "/result_pose", 
+                "/result_pose",
                 wxyz=(1.0, 0.0, 0.0, 0.0),
                 position=(0.0, 0.0, 0.0),
                 axes_length=0.08,
                 axes_radius=0.003,
             )
-            
+
             # Add grid
             self.server.scene.add_grid(
                 "/grid",
@@ -104,9 +107,9 @@ class IKSolver:
                 height=1,
                 position=(0.0, 0.0, 0.0),
             )
-            
+
             print("Viser visualization initialized. Check http://localhost:8080")
-            
+
         except Exception as e:
             print(f"Warning: Failed to setup visualization: {e}")
             self.enable_viz = False
@@ -114,7 +117,7 @@ class IKSolver:
     def solve(self, pos, quat, curr_qpos, max_iters=20, err_thresh=1e-4):
         # Convert quaternion from (x, y, z, w) to (w, x, y, z) for mujoco
         quat_mj = quat[[3, 0, 1, 2]]
-        
+
         # Update target frame visualization
         if self.enable_viz and self.target_frame is not None:
             # Convert quaternion to (w, x, y, z) for viser
@@ -148,11 +151,19 @@ class IKSolver:
                 break
 
             # Calculate update
-            mujoco.mj_jacSite(self.model, self.data, self.jac_pos, self.jac_rot, self.site_id)
-            update = self.jac.T @ np.linalg.solve(self.jac @ self.jac.T + self.damping, self.err)
+            mujoco.mj_jacSite(
+                self.model, self.data, self.jac_pos, self.jac_rot, self.site_id
+            )
+            update = self.jac.T @ np.linalg.solve(
+                self.jac @ self.jac.T + self.damping, self.err
+            )
             # Add secondary task to be as close as possible to home position, defined in the keyframe "home" in the xml
             qpos0_err = np.mod(self.qpos0 - self.data.qpos + np.pi, 2 * np.pi) - np.pi
-            update += (self.eye - (self.jac.T @ np.linalg.pinv(self.jac @ self.jac.T + self.damping)) @ self.jac) @ qpos0_err
+            update += (
+                self.eye
+                - (self.jac.T @ np.linalg.pinv(self.jac @ self.jac.T + self.damping))
+                @ self.jac
+            ) @ qpos0_err
 
             # Enforce max angle change
             update_max = np.abs(update).max()
@@ -161,23 +172,23 @@ class IKSolver:
 
             # Apply update
             mujoco.mj_integratePos(self.model, self.data.qpos, update, 1.0)
-            
+
             # Update robot visualization during IK solving
             if self.enable_viz and self.viser_urdf is not None:
-                self.viser_urdf.update_cfg(self.data.qpos[:self.model.nv])
+                self.viser_urdf.update_cfg(self.data.qpos[: self.model.nv])
 
         # Update result frame with final end-effector pose
         if self.enable_viz and self.result_frame is not None:
             # Recompute kinematics for final result
             mujoco.mj_kinematics(self.model, self.data)
             mujoco.mj_comPos(self.model, self.data)
-            
+
             # Get final end-effector pose
             final_pos = self.site_pos.copy()
             mujoco.mju_mat2Quat(self.site_quat, self.site_mat)
             # Convert from (w,x,y,z) to (w,x,y,z) for viser (already in correct format)
             final_quat_viser = self.site_quat.copy()
-            
+
             self.result_frame.position = tuple(final_pos)
             self.result_frame.wxyz = tuple(final_quat_viser)
 
