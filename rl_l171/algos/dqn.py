@@ -13,7 +13,7 @@ import torch.optim as optim
 import tyro
 from torch.utils.tensorboard import SummaryWriter
 
-from cleanrl_utils.buffers import ReplayBuffer
+from rl_l171.algos.buffers import ReplayBuffer
 
 
 @dataclass
