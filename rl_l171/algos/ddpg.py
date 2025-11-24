@@ -206,11 +206,6 @@ if __name__ == "__main__":
         monitor_gym=True,
         save_code=True,
     )
-    # writer = SummaryWriter(f"runs/{run_name}")
-    # writer.add_text(
-    #     "hyperparameters",
-    #     "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
-    #     )
 
     # TRY NOT TO MODIFY: seeding
     random.seed(args.seed)
@@ -276,9 +271,11 @@ if __name__ == "__main__":
 
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = envs.step(actions)
+        state_value = envs.get_attr("state_value")[0]
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         if "final_info" in infos:
             log.update({"episode/return": rewards.mean()})
+            log.update({"episode/cube_distance": -state_value})
             for info in infos["final_info"]:
                 if info and "episode" in info:
                     pbar.set_postfix(
@@ -326,9 +323,6 @@ if __name__ == "__main__":
             # optimize the model
             q_optimizer.zero_grad()
             qf1_loss.backward()
-            critic_grad_norm = clip_grad_norm_(
-                qf1.parameters(), max_norm=args.max_grad_norm
-            )
 
             total_norm = 0.0
             for p in qf1.parameters():
@@ -336,6 +330,11 @@ if __name__ == "__main__":
             total_norm = torch.tensor(total_norm).sqrt()
 
             log.update({"train/critic_grad_norm": total_norm})
+
+            critic_grad_norm = clip_grad_norm_(
+                qf1.parameters(), max_norm=args.max_grad_norm
+            )
+
 
             q_optimizer.step()
 
@@ -347,9 +346,6 @@ if __name__ == "__main__":
                 actor_loss = -qf1(data.observations, actor(data.observations)).mean()
                 actor_optimizer.zero_grad()
                 actor_loss.backward()
-                actor_grad_norm = clip_grad_norm_(
-                    actor.parameters(), max_norm=args.max_grad_norm
-                )
 
                 total_norm = 0.0
                 for p in actor.parameters():
@@ -357,6 +353,10 @@ if __name__ == "__main__":
                 total_norm = torch.tensor(total_norm).sqrt()
 
                 log.update({"train/actor_grad_norm": total_norm})
+
+                actor_grad_norm = clip_grad_norm_(
+                    actor.parameters(), max_norm=args.max_grad_norm
+                )
 
                 actor_optimizer.step()
                 total_norm = torch.sqrt(
@@ -383,7 +383,7 @@ if __name__ == "__main__":
                         "train/qf1_values": qf1_a_values.mean().item(),
                         "train/qf1_loss": qf1_loss.item(),
                         "train/actor_loss": actor_loss.item(),
-                        "train/target_max": target_max,
+                        "train/target_max": target_max.mean().item(),
                         "train/reward": data.rewards.flatten().mean().item(),
                         "trains/steps_per_second": int(global_step / (time.time() - start_time)),
                     }
@@ -403,7 +403,7 @@ if __name__ == "__main__":
             model_path,
             make_env_render,
             args.env_id,
-            eval_episodes=2,
+            eval_episodes=1,
             run_name=f"{run_name}-eval",
             Model=(Actor, QNetwork),
             device=device,
