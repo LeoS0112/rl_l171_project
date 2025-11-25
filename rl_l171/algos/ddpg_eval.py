@@ -1,23 +1,21 @@
 from typing import Callable
 
 import gymnasium as gym
+import numpy as np
 import torch
 import torch.nn as nn
-from rl_l171.algos.ddpg import make_env_render, Actor, QNetwork
+from rl_l171.algos.ddpg import Actor, QNetwork
 
 
 def evaluate(
     model_path: str,
     make_env: Callable,
-    env_id: str,
     eval_episodes: int,
-    run_name: str,
-    Model: nn.Module,
+    Model: tuple[type[nn.Module], type[nn.Module]],
     device: torch.device = torch.device("cpu"),
-    capture_video: bool = True,
     exploration_noise: float = 0,
 ):
-    envs = gym.vector.SyncVectorEnv([make_env(env_id, 0, 0, capture_video, run_name)])
+    envs = gym.vector.SyncVectorEnv([make_env()])
     actor = Model[0](envs).to(device)
     qf = Model[1](envs).to(device)
     actor_params, qf_params = torch.load(model_path, map_location=device)
@@ -47,10 +45,10 @@ def evaluate(
                 print(
                     f"eval_episode={len(episodic_returns)}, episodic_return={info['episode']['r']}"
                 )
-                episodic_returns += [info["episode"]["r"]]
+                episodic_returns.append(info["episode"]["r"])
         obs = next_obs
 
-    return episodic_returns
+    return np.concatenate(episodic_returns)
 
 
 if __name__ == "__main__":
@@ -60,7 +58,7 @@ if __name__ == "__main__":
 
     evaluate(
         model_path,
-        make_env_render,
+        make_env,
         "Cubes-v0",
         eval_episodes=10,
         run_name=f"eval",

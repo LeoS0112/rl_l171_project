@@ -10,7 +10,8 @@ import gymnasium as gym
 from gymnasium.wrappers import (
     FlattenObservation,
     RecordEpisodeStatistics,
-)  # or from gymnasium.wrappers import FlattenObservation
+    RecordVideo,
+)
 
 import numpy as np
 import torch
@@ -24,6 +25,9 @@ from torch.nn.utils import clip_grad_norm_
 from rl_l171.algos.buffers import ReplayBuffer, PriorityBufferHeap, PriorityBuffer
 from rl_l171.algos.dqn import linear_schedule
 from rl_l171.gym_env import CubesGymEnv
+
+
+VIDEO_ROOT = Path("videos")
 
 
 @dataclass
@@ -42,8 +46,6 @@ class Args:
     """the wandb's project name"""
     wandb_entity: str = "leosanitt-university-of-cambridge"
     """the entity (team) of wandb's project"""
-    capture_video: bool = False
-    """whether to capture videos of the agent performances (check out `videos` folder)"""
     save_model: bool = False
     """whether to save model into the `runs/{run_name}` folder"""
     upload_model: bool = False
@@ -106,6 +108,13 @@ def make_env(
             **(env_kwargs if env_kwargs is not None else {}),
         )
         env.action_space.seed(seed)
+        if capture_video:
+            env = RecordVideo(
+                env,
+                VIDEO_ROOT / run_name,
+                name_prefix="eval",
+                episode_trigger=lambda i: i == 0,
+            )
         env = RecordEpisodeStatistics(FlattenObservation(env))
         return env
 
@@ -196,7 +205,7 @@ if __name__ == "__main__":
 
     # env setup
     envs = gym.vector.SyncVectorEnv(
-        [make_env(args.env_id, args.seed, 0, args.capture_video, run_name)]
+        [make_env(args.env_id, args.seed, 0, False, run_name)]
     )
     assert isinstance(envs.single_action_space, gym.spaces.Box), (
         "only continuous action space is supported"
@@ -385,18 +394,35 @@ if __name__ == "__main__":
         print(f"model saved to {model_path}")
         from rl_l171.algos.ddpg_eval import evaluate
 
+        run_name_eval = f"{run_name}-eval"
+        video_dir = VIDEO_ROOT / run_name_eval
+
         episodic_returns = evaluate(
             model_path,
-            partial(make_env, env_kwargs={"render_mode": "human"}),
-            args.env_id,
+            partial(
+                make_env,
+                env_id=args.env_id,
+                seed=args.seed,
+                idx=0,
+                capture_video=True,
+                run_name=run_name_eval,
+                env_kwargs={"render_mode": "human"},
+            ),
             eval_episodes=1,
-            run_name=f"{run_name}-eval",
             Model=(Actor, QNetwork),
             device=device,
             exploration_noise=0,
         )
+
+        log = {}
         for idx, episodic_return in enumerate(episodic_returns):
-            log.update({"episode/return": episodic_return}, step=idx)
-            wandb_run.log(log)
+            log.update(
+                {
+                    "eval/return_mean": episodic_return.mean().item(),
+                    "eval/return_std": episodic_return.std().item(),
+                }
+            )
+        wandb_run.log(log)
+
     envs.close()
     wandb.finish()
