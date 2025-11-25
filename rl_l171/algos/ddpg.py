@@ -65,13 +65,16 @@ class Args:
     """target smoothing coefficient (default: 0.005)"""
     batch_size: int = 256
     """the batch size of sample from the reply memory"""
-    exploration_noise: float = 0.1
-    """the scale of exploration noise"""
     learning_starts: int = 25_000
     """timestep to start learning"""
     policy_frequency: int = 2
     """the frequency of training policy (delayed)"""
     max_grad_norm: int = 10
+
+    # exploration
+    start_e: float = 2 / 3
+    end_e: float = 1 / 30
+    exploration_fraction: float = 0.5
 
 
 def make_env(
@@ -175,6 +178,15 @@ class Actor(nn.Module):
         return x * self.action_scale + self.action_bias
 
 
+def linear_schedule(t, t0: int, T: int, x0: float, xT: float):
+    if t <= t0:
+        return x0
+    t -= t0
+    T -= t0
+    slope = (xT - x0) / T
+    return max(slope * t + x0, xT)
+
+
 if __name__ == "__main__":
     import wandb
     from tqdm import tqdm
@@ -234,7 +246,11 @@ if __name__ == "__main__":
     wandb_run.define_metric("episode/*", step_metric="global_step")
     wandb_run.define_metric("train/*", step_metric="global_step")
 
-    start_time = time.time()
+    start_time = time.perf_counter()
+
+    t0 = args.learning_starts
+    T = int((args.total_timesteps - t0) * args.exploration_fraction)
+    epsilon_func = partial(linear_schedule, t0=t0, T=T, x0=args.start_e, xT=args.end_e)
 
     # TRY NOT TO MODIFY: start the game
     obs, _ = envs.reset(seed=args.seed)
@@ -242,20 +258,18 @@ if __name__ == "__main__":
         log = {}
         log.update({"global_step": global_step})
 
+        epsilon = epsilon_func(t=global_step)
+        log.update({"exploration/epsilon": epsilon})
+
         # ALGO LOGIC: put action logic here
-        if global_step < args.learning_starts:
-            actions = np.array(
-                [envs.single_action_space.sample() for _ in range(envs.num_envs)]
+        with torch.no_grad():
+            actions = actor(torch.Tensor(obs).to(device))
+            actions += torch.normal(0, actor.action_scale * epsilon)
+            actions = (
+                actions.cpu()
+                .numpy()
+                .clip(envs.single_action_space.low, envs.single_action_space.high)
             )
-        else:
-            with torch.no_grad():
-                actions = actor(torch.Tensor(obs).to(device))
-                actions += torch.normal(0, actor.action_scale * args.exploration_noise)
-                actions = (
-                    actions.cpu()
-                    .numpy()
-                    .clip(envs.single_action_space.low, envs.single_action_space.high)
-                )
 
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = envs.step(actions)
@@ -303,9 +317,20 @@ if __name__ == "__main__":
             rb.update_priorities(
                 batch_indices=btch_ind,
                 td_errors=td_errors.detach().cpu().numpy(),  # or td_errors.detach()
+                # td_errors=np.array([1] * args.batch_size),  # random
             )
 
             qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
+
+            log.update(
+                {
+                    "train/qf1_values": qf1_a_values.mean().item(),
+                    "train/qf1_loss": qf1_loss.item(),
+                    "train/target_max": target_max.mean().item(),
+                    "train/reward": data.rewards.flatten().mean().item(),
+                }
+            )
+
             # optimize the model
             q_optimizer.zero_grad()
             qf1_loss.backward()
@@ -325,8 +350,12 @@ if __name__ == "__main__":
                 sum(p.data.pow(2).sum() for p in qf1.parameters() if p.grad is not None)
             ).item()
             log.update({"train/critic_l2_norm": total_norm})
-            if global_step % args.policy_frequency == 0:
+
+            if (global_step - args.learning_starts) % args.policy_frequency == 0:
                 actor_loss = -qf1(data.observations, actor(data.observations)).mean()
+
+                log.update({"train/actor_loss": actor_loss.item()})
+
                 actor_optimizer.zero_grad()
                 actor_loss.backward()
 
@@ -363,19 +392,14 @@ if __name__ == "__main__":
                     target_param.data.copy_(
                         args.tau * param.data + (1 - args.tau) * target_param.data
                     )
-                # if global_step % 100 == 0:
-                log.update(
-                    {
-                        "train/qf1_values": qf1_a_values.mean().item(),
-                        "train/qf1_loss": qf1_loss.item(),
-                        "train/actor_loss": actor_loss.item(),
-                        "train/target_max": target_max.mean().item(),
-                        "train/reward": data.rewards.flatten().mean().item(),
-                        "trains/steps_per_second": int(
-                            global_step / (time.time() - start_time)
-                        ),
-                    }
-                )
+
+        log.update(
+            {
+                "trains/steps_per_second": int(
+                    global_step / (time.perf_counter() - start_time)
+                ),
+            }
+        )
         wandb_run.log(log)
 
     if args.save_model:
