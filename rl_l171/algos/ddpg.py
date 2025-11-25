@@ -53,7 +53,7 @@ class Args:
     # Algorithm specific arguments
     env_id: str = "Cubes-v0"
     """the environment id of the Atari game"""
-    total_timesteps: int = 1000000
+    total_timesteps: int = 50_000
     """total timesteps of the experiments"""
     learning_rate: float = 1e-4
     """the learning rate of the optimizer"""
@@ -65,7 +65,7 @@ class Args:
     """target smoothing coefficient (default: 0.005)"""
     batch_size: int = 256
     """the batch size of sample from the reply memory"""
-    learning_starts: int = 25_000
+    learning_starts: int = 256 * 4
     """timestep to start learning"""
     policy_frequency: int = 2
     """the frequency of training policy (delayed)"""
