@@ -95,19 +95,6 @@ def make_env(
     ) | (env_kwargs or {})
 
     def thunk():
-        # if capture_video and idx == 0:
-        #     env = gym.make(env_id, render_mode="rgb_array")
-        #     env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-        # else:
-        #     env = gym.make(env_id)
-        # env = gym.wrappers.RecordEpisodeStatistics(env)
-        # env.action_space.seed(seed)
-
-        # env = gym.wrappers.RecordEpisodeStatistics(env)
-        # if capture_video and idx == 0:
-        #     env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-        # env.seed(seed)
-
         env = CubesGymEnv(**env_kwargs)
         env.action_space.seed(seed)
         if capture_video:
@@ -322,70 +309,70 @@ if __name__ == "__main__":
             td_errors = next_q_value - qf1_a_values
             rb.update_priorities(
                 batch_indices=btch_ind,
-                td_errors=td_errors.detach().cpu().numpy(),  # or td_errors.detach()
-                # td_errors=np.array([1] * args.batch_size),  # random
+                td_errors=td_errors.detach().cpu().numpy(),  # priority sampling
+                # td_errors=np.array([1] * args.batch_size),  # random sampling
             )
 
             qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
 
             log.update(
                 {
-                    "train/qf1_values": qf1_a_values.mean().item(),
-                    "train/qf1_loss": qf1_loss.item(),
-                    "train/target_max": target_max.mean().item(),
+                    "train/qf1_values": qf1_a_values.detach().mean().item(),
+                    "train/target_max": target_max.detach().mean().item(),
                     "train/reward": data.rewards.flatten().mean().item(),
+                    "train/qf1_loss": qf1_loss.detach().item(),
                 }
             )
 
-            # optimize the model
+            # optimize the value model
             q_optimizer.zero_grad()
             qf1_loss.backward()
 
-            total_norm = 0.0
+            total_norm_list = []
             for p in qf1.parameters():
-                total_norm += p.grad.norm(2).detach().pow(2).item()
-            total_norm = torch.tensor(total_norm).sqrt()
-
+                if p.grad is not None:
+                    total_norm_list.append(p.grad.detach().norm().item())
+            total_norm = torch.tensor(total_norm_list).norm()
             log.update({"train/critic_grad_norm": total_norm})
 
             clip_grad_norm_(qf1.parameters(), max_norm=args.max_grad_norm)
 
             q_optimizer.step()
 
-            total_norm = torch.sqrt(
-                sum(p.data.pow(2).sum() for p in qf1.parameters() if p.grad is not None)
-            ).item()
+            total_norm_list = []
+            for p in qf1.parameters():
+                if p.grad is not None:
+                    total_norm_list.append(p.data.detach().norm().item())
+            total_norm = torch.tensor(total_norm_list).norm()
             log.update({"train/critic_l2_norm": total_norm})
 
             if (global_step - args.learning_starts) % args.policy_frequency == 0:
+                # optimize the policy model
                 actor_loss = -qf1(data.observations, actor(data.observations)).mean()
-
                 log.update({"train/actor_loss": actor_loss.item()})
 
                 actor_optimizer.zero_grad()
                 actor_loss.backward()
 
-                total_norm = 0.0
+                total_norm_list = []
                 for p in actor.parameters():
-                    total_norm += p.grad.norm(2).detach().pow(2).item()
-                total_norm = torch.tensor(total_norm).sqrt()
-
+                    if p.grad is not None:
+                        total_norm_list.append(p.grad.detach().norm().item())
+                total_norm = torch.tensor(total_norm_list).norm()
                 log.update({"train/actor_grad_norm": total_norm})
 
                 clip_grad_norm_(actor.parameters(), max_norm=args.max_grad_norm)
 
                 actor_optimizer.step()
 
-                total_norm = torch.sqrt(
-                    sum(
-                        p.data.pow(2).sum()
-                        for p in actor.parameters()
-                        if p.grad is not None
-                    )
-                ).item()
+                total_norm_list = []
+                for p in actor.parameters():
+                    if p.grad is not None:
+                        total_norm_list.append(p.data.detach().norm().item())
+                total_norm = torch.tensor(total_norm_list).norm()
                 log.update({"train/actor_l2_norm": total_norm})
 
-                # update the target network
+                # update the target networks
                 for param, target_param in zip(
                     actor.parameters(), target_actor.parameters()
                 ):
@@ -431,20 +418,19 @@ if __name__ == "__main__":
                 run_name=run_name_eval,
                 env_kwargs={"render_mode": "rgb_array"},
             ),
-            eval_episodes=1,
+            eval_episodes=10,
             Model=(Actor, QNetwork),
             device=device,
             exploration_noise=0,
         )
 
         log = {}
-        for idx, episodic_return in enumerate(episodic_returns):
-            log.update(
-                {
-                    "eval/return_mean": episodic_return.mean().item(),
-                    "eval/return_std": episodic_return.std().item(),
-                }
-            )
+        log.update(
+            {
+                "eval/return_mean": episodic_returns.mean().item(),
+                "eval/return_std": episodic_returns.std().item(),
+            }
+        )
         wandb_run.log(log)
 
         for vid_file in video_dir.glob("*.mp4"):
