@@ -1,4 +1,5 @@
 # docs and experiment results can be found at https://docs.cleanrl.dev/rl-algorithms/ddpg/#ddpg_continuous_actionpy
+from functools import partial
 import os
 import random
 import time
@@ -23,23 +24,6 @@ from torch.nn.utils import clip_grad_norm_
 from rl_l171.algos.buffers import ReplayBuffer, PriorityBufferHeap, PriorityBuffer
 from rl_l171.algos.dqn import linear_schedule
 from rl_l171.gym_env import CubesGymEnv
-
-n_cubes = 5
-cube_env = CubesGymEnv(
-    render_mode="None",
-    max_nr_steps=100,
-    randomise_initial_position=True,
-    seed=5,
-    nr_cubes=n_cubes,
-)
-
-cube_env_render = CubesGymEnv(
-    render_mode="human",
-    max_nr_steps=100,
-    randomise_initial_position=True,
-    seed=5,
-    nr_cubes=n_cubes,
-)
 
 
 @dataclass
@@ -91,7 +75,14 @@ class Args:
     max_grad_norm: int = 10
 
 
-def make_env(env_id, seed, idx, capture_video, run_name):
+def make_env(
+    env_id,
+    seed,
+    idx,
+    capture_video,
+    run_name,
+    env_kwargs: dict | None = None,
+):
     def thunk():
         # if capture_video and idx == 0:
         #     env = gym.make(env_id, render_mode="rgb_array")
@@ -100,38 +91,22 @@ def make_env(env_id, seed, idx, capture_video, run_name):
         #     env = gym.make(env_id)
         # env = gym.wrappers.RecordEpisodeStatistics(env)
         # env.action_space.seed(seed)
-        #
-        env = cube_env
-        # 👇 flatten Dict -> Box (and Box stays Box)
-        env = RecordEpisodeStatistics(FlattenObservation(env))
 
         # env = gym.wrappers.RecordEpisodeStatistics(env)
         # if capture_video and idx == 0:
         #     env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
         # env.seed(seed)
-        return env
 
-    return thunk
-
-
-def make_env_render(env_id, seed, idx, capture_video, run_name):
-    def thunk():
-        # if capture_video and idx == 0:
-        #     env = gym.make(env_id, render_mode="rgb_array")
-        #     env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-        # else:
-        #     env = gym.make(env_id)
-        # env = gym.wrappers.RecordEpisodeStatistics(env)
-        # env.action_space.seed(seed)
-        #
-        env = cube_env_render
-        # 👇 flatten Dict -> Box (and Box stays Box)
+        env = CubesGymEnv(
+            render_mode=None,
+            max_nr_steps=100,
+            randomise_initial_position=True,
+            seed=seed,
+            nr_cubes=5,
+            **(env_kwargs if env_kwargs is not None else {}),
+        )
+        env.action_space.seed(seed)
         env = RecordEpisodeStatistics(FlattenObservation(env))
-
-        # env = gym.wrappers.RecordEpisodeStatistics(env)
-        # if capture_video and idx == 0:
-        #     env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-        # env.seed(seed)
         return env
 
     return thunk
@@ -412,7 +387,7 @@ if __name__ == "__main__":
 
         episodic_returns = evaluate(
             model_path,
-            make_env_render,
+            partial(make_env, env_kwargs={"render_mode": "human"}),
             args.env_id,
             eval_episodes=1,
             run_name=f"{run_name}-eval",
