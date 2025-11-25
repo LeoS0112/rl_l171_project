@@ -64,6 +64,7 @@ class EvalArgs(Args):
     seed: int = 42
     wandb_project_name: str = "rl171_eval"
     run_name: str = "Cubes-v0__ddpg__1__1764088346"
+    max_nr_steps: int = 200
 
 
 if __name__ == "__main__":
@@ -95,7 +96,11 @@ if __name__ == "__main__":
             idx=0,
             capture_video=True,
             run_name=run_name_eval,
-            env_kwargs={"render_mode": "rgb_array", "max_nr_steps": 500},
+            env_kwargs={
+                "render_mode": "rgb_array",
+                "max_nr_steps": args.max_nr_steps,
+                "nr_cubes": args.nr_cubes,
+            },
             video_trigger=lambda _: True,
         ),
         eval_episodes=4,

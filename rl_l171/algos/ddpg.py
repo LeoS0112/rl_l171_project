@@ -76,6 +76,10 @@ class Args:
     end_e: float = 1 / 30
     exploration_fraction: float = 0.5
 
+    # environment
+    max_nr_steps: int = 100
+    nr_cubes: int = 5
+
 
 def make_env(
     env_id,
@@ -200,7 +204,19 @@ if __name__ == "__main__":
 
     # env setup
     envs = gym.vector.SyncVectorEnv(
-        [make_env(args.env_id, args.seed, 0, False, run_name)]
+        [
+            make_env(
+                args.env_id,
+                args.seed,
+                0,
+                False,
+                run_name,
+                env_kwargs={
+                    "max_nr_steps": args.max_nr_steps,
+                    "nr_cubes": args.nr_cubes,
+                },
+            )
+        ]
     )
     assert isinstance(envs.single_action_space, gym.spaces.Box), (
         "only continuous action space is supported"
@@ -417,7 +433,11 @@ if __name__ == "__main__":
                 idx=0,
                 capture_video=True,
                 run_name=run_name_eval,
-                env_kwargs={"render_mode": "rgb_array"},
+                env_kwargs={
+                    "render_mode": "rgb_array",
+                    "max_nr_steps": args.max_nr_steps,
+                    "nr_cubes": args.nr_cubes,
+                },
             ),
             eval_episodes=10,
             Model=(Actor, QNetwork),
