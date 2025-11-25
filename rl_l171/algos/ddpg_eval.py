@@ -63,8 +63,7 @@ def evaluate(
 class EvalArgs(Args):
     seed: int = 42
     wandb_project_name: str = "rl171_eval"
-    run_name: str = "Cubes-v0__ddpg__1__1764088346"
-    max_nr_steps: int = 200
+    run_name: str = "Cubes-v0__ddpg__1__1764091177"
 
 
 if __name__ == "__main__":
@@ -98,7 +97,7 @@ if __name__ == "__main__":
             run_name=run_name_eval,
             env_kwargs={
                 "render_mode": "rgb_array",
-                "max_nr_steps": args.max_nr_steps,
+                "max_nr_steps": 500,
                 "nr_cubes": args.nr_cubes,
             },
             video_trigger=lambda _: True,

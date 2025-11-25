@@ -435,7 +435,7 @@ if __name__ == "__main__":
                 run_name=run_name_eval,
                 env_kwargs={
                     "render_mode": "rgb_array",
-                    "max_nr_steps": args.max_nr_steps,
+                    "max_nr_steps": 500,
                     "nr_cubes": args.nr_cubes,
                 },
             ),
