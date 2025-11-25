@@ -1,5 +1,8 @@
+"""
+python3 -m rl_l171.algos.ddpg_eval
+"""
+
 from functools import partial
-from pathlib import Path
 from typing import Callable
 
 import gymnasium as gym
@@ -79,7 +82,3 @@ if __name__ == "__main__":
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         exploration_noise=0,
     )
-
-"""
-python3 -m rl_l171.algos.ddpg_eval
-"""
