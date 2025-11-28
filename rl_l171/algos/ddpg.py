@@ -105,6 +105,9 @@ class Args:
     pb_beta: float = 0.0
     pb_beta_increment_per_sampling: float = 0.0
 
+    evaluation_frequency: int = 5_000
+    """the timesteps between two evaluations"""
+
 
 def make_env(
     env_id,
@@ -229,12 +232,50 @@ def linear_schedule(t, t0: int, T: int, x0: float, xT: float):
     return max(slope * t + x0, xT)
 
 
+@torch.no_grad()
+def evaluate(
+    make_env: Callable[[], Callable[[], gym.Env]],
+    load_model: Callable[[gym.Env, torch.device], nn.Module],
+    eval_episodes: int,
+    device: torch.device = torch.device("cpu"),
+):
+    envs = gym.vector.SyncVectorEnv([make_env()])
+    actor = load_model(envs, device)
+
+    obs, _ = envs.reset()
+    episodic_returns = []
+    while len(episodic_returns) < eval_episodes:
+        actions = actor(torch.tensor(obs).to(device))
+        actions += torch.normal(0, actor.action_scale)
+        actions = (
+            actions.cpu()
+            .numpy()
+            .clip(envs.single_action_space.low, envs.single_action_space.high)
+        )
+
+        next_obs, _, _, _, infos = envs.step(actions)
+        if "final_info" in infos:
+            for info in infos["final_info"]:
+                if "episode" not in info:
+                    continue
+                print(
+                    f"eval_episode={len(episodic_returns)}, episodic_return={info['episode']['r']}"
+                )
+                episodic_returns.append(info["episode"]["r"])
+        obs = next_obs
+
+    envs.close()
+    return np.concatenate(episodic_returns)
+
+
 if __name__ == "__main__":
     import wandb
     from tqdm import tqdm
 
     args = tyro.cli(Args)
-    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{time.monotonic()}"
+
+    assert args.total_timesteps % args.evaluation_frequency == 0
 
     wandb_run = wandb.init(
         project=args.wandb_project_name,
@@ -614,58 +655,55 @@ if __name__ == "__main__":
                 ),
             }
         )
+
+        if (global_step + 1) % args.evaluation_frequency == 0:
+            run_name_eval = f"{run_name}-eval-{global_step}"
+
+            episodic_returns = evaluate(
+                make_env=partial(
+                    make_env,
+                    env_id=args.env_id,
+                    seed=args.seed + global_step,
+                    idx=0,
+                    capture_video=(global_step + 1) == args.total_timesteps,
+                    run_name=run_name_eval,
+                    env_kwargs={
+                        "render_mode": "rgb_array",
+                        "max_nr_steps": 500,
+                        "nr_cubes": args.nr_cubes,
+                    },
+                ),
+                load_model=lambda _, device: actor.to(device),
+                eval_episodes=20,
+                device=device,
+            )
+
+            log.update(
+                {
+                    "eval/return_mean": episodic_returns.mean().item(),
+                    "eval/return_std": episodic_returns.std().item(),
+                }
+            )
+
+            video_dir = VIDEO_ROOT / run_name_eval
+            for vid_file in video_dir.glob("*.mp4"):
+                log.update(
+                    {
+                        f"eval/video_{vid_file.stem}": wandb.Video(
+                            str(vid_file), caption=vid_file.stem, fps=30, format="mp4"
+                        )
+                    }
+                )
+
         wandb_run.log(log)
 
     if args.save_model:
         model_dir = Path("runs") / run_name
-        model_dir.mkdir(parents=True, exist_ok=True)  # <-- ensure directory exists
+        model_dir.mkdir(parents=True, exist_ok=True)
 
         model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
         torch.save((actor.state_dict(), qf1.state_dict()), model_path)
         print(f"model saved to {model_path}")
-        from rl_l171.algos.ddpg_eval import evaluate
-
-        run_name_eval = f"{run_name}-eval"
-        video_dir = VIDEO_ROOT / run_name_eval
-
-        episodic_returns = evaluate(
-            model_path,
-            partial(
-                make_env,
-                env_id=args.env_id,
-                seed=args.seed,
-                idx=0,
-                capture_video=True,
-                run_name=run_name_eval,
-                env_kwargs={
-                    "render_mode": "rgb_array",
-                    "max_nr_steps": 500,
-                    "nr_cubes": args.nr_cubes,
-                },
-            ),
-            eval_episodes=10,
-            Model=(Actor, QNetwork),
-            device=device,
-            exploration_noise=0,
-        )
-
-        log = {}
-        log.update(
-            {
-                "eval/return_mean": episodic_returns.mean().item(),
-                "eval/return_std": episodic_returns.std().item(),
-            }
-        )
-        wandb_run.log(log)
-
-        for vid_file in video_dir.glob("*.mp4"):
-            wandb_run.log(
-                {
-                    f"eval/video_{vid_file.stem}": wandb.Video(
-                        str(vid_file), caption=vid_file.stem, fps=30, format="mp4"
-                    )
-                }
-            )
 
     envs.close()
     wandb.finish()
