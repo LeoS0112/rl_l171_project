@@ -43,6 +43,7 @@ dependencies = [
     "huggingface-hub>=1.1.4",
     "tqdm>=4.67.1",
     "pip>=25.3",
+    "pdbpp>=0.11.7",
 ]
 
 [tool.setuptools.packages.find]
