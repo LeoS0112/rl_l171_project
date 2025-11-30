@@ -31,6 +31,9 @@ from rl_l171.algos.buffers import (
 )
 from rl_l171.gym_env import CubesGymEnv
 
+if TYPE_CHECKING:
+    from wandb.sdk.wandb_run import Run
+
 
 VIDEO_ROOT = Path("videos")
 
@@ -275,24 +278,7 @@ def evaluate(
     )
 
 
-if __name__ == "__main__":
-    import wandb
-    from tqdm import tqdm
-
-    args = tyro.cli(Args)
-    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{time.monotonic()}"
-
-    assert args.total_timesteps % args.evaluation_frequency == 0
-
-    wandb_run = wandb.init(
-        project=args.wandb_project_name,
-        entity=args.wandb_entity,
-        config=vars(args),
-        name=run_name,
-        monitor_gym=True,
-        save_code=True,
-    )
-
+def main(args: Args, wandb_run: "Run"):
     # TRY NOT TO MODIFY: seeding
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -718,4 +704,24 @@ if __name__ == "__main__":
         print(f"model saved to {model_path}")
 
     envs.close()
-    wandb.finish()
+    wandb_run.finish()
+
+
+if __name__ == "__main__":
+    import tyro
+    import wandb
+
+    args = tyro.cli(Args)
+    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{time.monotonic()}"
+
+    assert args.total_timesteps % args.evaluation_frequency == 0
+
+    wandb_run = wandb.init(
+        project=args.wandb_project_name,
+        entity=args.wandb_entity,
+        config=vars(args),
+        name=run_name,
+        monitor_gym=True,
+        save_code=True,
+    )
+    main(args, wandb_run)
