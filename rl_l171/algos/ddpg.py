@@ -3,7 +3,7 @@ import math
 import os
 import random
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
@@ -278,7 +278,10 @@ def evaluate(
     )
 
 
-def main(args: Args, wandb_run: "Run"):
+def train(wandb_run: "Run"):
+    args = wandb_run.config
+    run_name = args.run_name
+
     # TRY NOT TO MODIFY: seeding
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -704,7 +707,6 @@ def main(args: Args, wandb_run: "Run"):
         print(f"model saved to {model_path}")
 
     envs.close()
-    wandb_run.finish()
 
 
 if __name__ == "__main__":
@@ -716,12 +718,12 @@ if __name__ == "__main__":
 
     assert args.total_timesteps % args.evaluation_frequency == 0
 
-    wandb_run = wandb.init(
+    with wandb.init(
         project=args.wandb_project_name,
         entity=args.wandb_entity,
-        config=vars(args),
+        config=dict(**asdict(args), run_name=run_name),
         name=run_name,
         monitor_gym=True,
         save_code=True,
-    )
-    main(args, wandb_run)
+    ) as wandb_run:
+        train(wandb_run)
