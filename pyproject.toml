@@ -47,3 +47,6 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.ruff.lint.isort]
+known-third-party = ["wandb"]
