@@ -2,14 +2,14 @@
 python3 -m rl_l171.algos.ddpg_eval
 """
 
-from functools import partial
 from dataclasses import dataclass
+from functools import partial
 
 import gymnasium as gym
 import torch
 import torch.nn as nn
 
-from rl_l171.algos.ddpg import Actor, make_env, Args, VIDEO_ROOT, evaluate
+from rl_l171.algos.ddpg import VIDEO_ROOT, Actor, Args, evaluate, make_env
 
 
 def load_model(
@@ -33,8 +33,8 @@ class EvalArgs(Args):
 
 
 if __name__ == "__main__":
-    import wandb
     import tyro
+    import wandb
 
     args = tyro.cli(EvalArgs)
 

@@ -2,15 +2,16 @@
 # Date: August 2025
 # IK = Inverse Kinematics: find the joint angles to reach a desired end-effector pose
 
-import mujoco
-import numpy as np
 import time
 from pathlib import Path
 
+import mujoco
+import numpy as np
+
 try:
     import viser
-    from viser.extras import ViserUrdf
     import yourdfpy
+    from viser.extras import ViserUrdf
 
     VISER_AVAILABLE = True
 except ImportError:

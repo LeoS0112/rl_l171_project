@@ -2,8 +2,10 @@
 # Code to actually move the base and arm based on a given command
 
 import math
+
 import numpy as np
 from ruckig import InputParameter, OutputParameter, Result, Ruckig
+
 from rl_l171.utils.ik_solver_piper import IKSolver as IKSolverPiper
 
 

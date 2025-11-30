@@ -5,15 +5,15 @@ import time
 from dataclasses import dataclass
 
 import gymnasium as gym
-from gymnasium.wrappers import (
-    FlattenObservation,
-)  # or from gymnasium.wrappers import FlattenObservation
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import tyro
+from gymnasium.wrappers import (
+    FlattenObservation,
+)  # or from gymnasium.wrappers import FlattenObservation
 from torch.utils.tensorboard import SummaryWriter
 
 from rl_l171.algos.buffers import ReplayBuffer

@@ -1,14 +1,14 @@
 # Adapted from: https://github.com/camral/tidybot2_camral_sim/blob/main/mujoco_env.py
 
+import logging
 import random
+
 import mujoco
 import mujoco.viewer
 import numpy as np
-import logging
 
-from rl_l171.utils.constants import NR_GRIPPER_PIPER_JOINTS, ARM_RESET_QPOS
+from rl_l171.utils.constants import ARM_RESET_QPOS, NR_GRIPPER_PIPER_JOINTS
 from rl_l171.utils.controllers import BaseController, CamralArmController
-
 from rl_l171.utils.mujoco_xml import MujocoXML
 
 logger = logging.getLogger(__name__)

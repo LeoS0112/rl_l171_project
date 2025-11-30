@@ -1,8 +1,8 @@
 import time
 
 import gymnasium as gym
-from gymnasium import spaces
 import numpy as np
+from gymnasium import spaces
 
 from rl_l171.gym_env import CubesGymEnv
 

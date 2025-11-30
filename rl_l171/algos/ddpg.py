@@ -1,34 +1,33 @@
 # docs and experiment results can be found at https://docs.cleanrl.dev/rl-algorithms/ddpg/#ddpg_continuous_actionpy
 import math
-from functools import partial
 import os
 import random
 import time
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 import gymnasium as gym
-from gymnasium.wrappers import (
-    FlattenObservation,
-    RecordEpisodeStatistics,
-    RecordVideo,
-)
-
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
 import torch.optim as optim
-import tyro
+from gymnasium.wrappers import (
+    FlattenObservation,
+    RecordEpisodeStatistics,
+    RecordVideo,
+)
 from torch.nn.utils import clip_grad_norm_
+from tqdm import tqdm
 
 from rl_l171.algos.buffers import (
-    ReplayBuffer,
-    PriorityBufferHeap,
     PriorityBuffer,
+    PriorityBufferHeap,
     PriorityStreamingBuffer,
+    ReplayBuffer,
 )
 from rl_l171.gym_env import CubesGymEnv
 

@@ -1,5 +1,5 @@
-import time
 import itertools
+import time
 
 import gymnasium as gym
 import mujoco
@@ -7,8 +7,8 @@ import mujoco.viewer
 import numpy as np
 from gymnasium import spaces
 
-from rl_l171.utils.constants import POLICY_CONTROL_PERIOD, INSIDE_THRESHOLD
 from rl_l171.mujoco_env import CubesMujocoSim
+from rl_l171.utils.constants import INSIDE_THRESHOLD, POLICY_CONTROL_PERIOD
 
 
 class CubesGymEnv(gym.Env):

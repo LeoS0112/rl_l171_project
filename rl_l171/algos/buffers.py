@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import heapq
 import random
 import warnings
 from abc import ABC, abstractmethod
@@ -28,7 +29,6 @@ from typing import Any, NamedTuple
 import numpy as np
 import torch as th
 from gymnasium import spaces
-import heapq
 
 try:
     # Check memory used by replay buffer when possible
