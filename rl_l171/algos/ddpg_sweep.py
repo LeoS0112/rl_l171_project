@@ -8,6 +8,10 @@ from rl_l171.algos.ddpg import Args
 class SweepArgs(Args):
     wandb_project_name: str = "rl171_sweep"
     seed: int = 0
+    eval_episodes: int = 100
+    method: str = "random"
+    metric: str = "eval/cube_distance_mean"
+    goal: str = "minimize"
 
 
 def to_sweep(args: SweepArgs) -> dict:
@@ -49,8 +53,8 @@ def to_sweep(args: SweepArgs) -> dict:
 
     cfg_sweep = {
         "name": f"ddpg_sweep_{int(time.monotonic())}",
-        "method": "random",
-        "metric": {"goal": "maximize", "name": "episode/return"},
+        "method": args.method,
+        "metric": {"goal": args.goal, "name": args.metric},
         "parameters": cfg_params,
     }
     return cfg_sweep
@@ -85,7 +89,7 @@ if __name__ == "__main__":
         project=args.wandb_project_name,
     )
 
-    num_workers = 24
+    num_workers = 6
     runs_per_worker = 24
 
     def run_agent():

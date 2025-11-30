@@ -109,6 +109,8 @@ class Args:
 
     evaluation_frequency: int = 5_000
     """the timesteps between two evaluations"""
+    eval_episodes: int = 10
+    """the number of episodes to evaluate the agent"""
 
 
 def make_env(
@@ -262,9 +264,6 @@ def evaluate(
             for info in infos["final_info"]:
                 if "episode" not in info:
                     continue
-                print(
-                    f"eval_episode={len(episodic_returns)}, episodic_return={info['episode']['r']}"
-                )
                 episodic_returns.append(info["episode"]["r"])
                 cube_distances.append(info["cube_distance"])
                 n_cleaned.append(info["n_cleaned"])
@@ -671,7 +670,7 @@ def train(wandb_run: "Run"):
                     },
                 ),
                 load_model=lambda _, device: actor.to(device),
-                eval_episodes=20,
+                eval_episodes=args.eval_episodes,
                 device=device,
             )
 
