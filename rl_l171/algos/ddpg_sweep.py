@@ -18,7 +18,7 @@ class SweepArgs(Args):
 def to_sweep(args: SweepArgs) -> dict:
     cfg_params = {}
     for k, v in asdict(args).items():
-        if k in ["wandb_project_name", "wandb_entity"]:
+        if k in ["wandb_project_name", "wandb_entity", "wandb_sweep_id"]:
             continue
         cfg_params[k] = {"value": v}
 
