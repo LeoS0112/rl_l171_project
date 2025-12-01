@@ -7,6 +7,7 @@ from rl_l171.algos.ddpg import Args
 @dataclass
 class SweepArgs(Args):
     wandb_project_name: str = "rl171_sweep"
+    wandb_sweep_id: str | None = None
     seed: int = 0
     eval_episodes: int = 100
     method: str = "random"
@@ -83,11 +84,16 @@ if __name__ == "__main__":
         ) as wandb_run:
             train(wandb_run)
 
-    sweep_id = wandb.sweep(
-        sweep=to_sweep(args),
-        entity=args.wandb_entity,
-        project=args.wandb_project_name,
-    )
+    if args.wandb_sweep_id is None:
+        print("Starting a new sweep...")
+        sweep_id = wandb.sweep(
+            sweep=to_sweep(args),
+            entity=args.wandb_entity,
+            project=args.wandb_project_name,
+        )
+    else:
+        sweep_id = args.wandb_sweep_id
+        print(f"Using existing sweep: {sweep_id}")
 
     num_workers = 6
     runs_per_worker = 24
