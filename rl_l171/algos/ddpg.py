@@ -113,6 +113,8 @@ class Args:
     eval_episodes: int = 10
     """the number of episodes to evaluate the agent"""
 
+    capture_video: bool = True
+
 
 def make_env(
     env_id,
@@ -662,10 +664,10 @@ def train(wandb_run: "Run"):
                     env_id=args.env_id,
                     seed=args.seed + global_step,
                     idx=0,
-                    capture_video=(global_step + 1) == args.total_timesteps,
+                    capture_video=args.capture_video and (global_step + 1) == args.total_timesteps,
                     run_name=run_name_eval,
                     env_kwargs={
-                        "render_mode": "rgb_array",
+                        "render_mode": "rgb_array" if args.capture_video else None,
                         "max_nr_steps": 500,
                         "nr_cubes": args.nr_cubes,
                     },
