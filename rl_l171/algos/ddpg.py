@@ -664,7 +664,8 @@ def train(wandb_run: "Run"):
                     env_id=args.env_id,
                     seed=args.seed + global_step,
                     idx=0,
-                    capture_video=args.capture_video and (global_step + 1) == args.total_timesteps,
+                    capture_video=args.capture_video
+                    and (global_step + 1) == args.total_timesteps,
                     run_name=run_name_eval,
                     env_kwargs={
                         "render_mode": "rgb_array" if args.capture_video else None,
