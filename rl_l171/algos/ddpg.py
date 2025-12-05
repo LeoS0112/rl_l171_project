@@ -1,39 +1,36 @@
 # docs and experiment results can be found at https://docs.cleanrl.dev/rl-algorithms/ddpg/#ddpg_continuous_actionpy
 import math
+from functools import partial
 import os
 import random
 import time
-from dataclasses import asdict, dataclass
-from functools import partial
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import Callable
 
 import gymnasium as gym
+from gymnasium.wrappers import (
+    FlattenObservation,
+    RecordEpisodeStatistics,
+    RecordVideo,
+)
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
 import torch.optim as optim
-import wandb
-from gymnasium.wrappers import (
-    FlattenObservation,
-    RecordEpisodeStatistics,
-    RecordVideo,
-)
+import tyro
 from torch.nn.utils import clip_grad_norm_
-from tqdm import tqdm
 
 from rl_l171.algos.buffers import (
-    PriorityBuffer,
-    PriorityBufferHeap,
-    PriorityStreamingBuffer,
     ReplayBuffer,
+    PriorityBufferHeap,
+    PriorityBuffer,
+    PriorityStreamingBuffer,
 )
 from rl_l171.gym_env import CubesGymEnv
-
-if TYPE_CHECKING:
-    from wandb.sdk.wandb_run import Run
 
 
 VIDEO_ROOT = Path("videos")
@@ -102,18 +99,15 @@ class Args:
     priority_actor
     priority_actor_critic
     priority_inverse_critic
-    priority_streaming
+    priority_streaming_rewards
+    priority_streaming_td
     """
-    buffer_strategy: str = "priority_critic"
+    buffer_strategy: str = "priority_streaming_td"
     pb_beta: float = 0.0
     pb_beta_increment_per_sampling: float = 0.0
-
+    alpha_streaming: float = 0.6
     evaluation_frequency: int = 5_000
     """the timesteps between two evaluations"""
-    eval_episodes: int = 10
-    """the number of episodes to evaluate the agent"""
-
-    capture_video: bool = True
 
 
 def make_env(
@@ -267,6 +261,9 @@ def evaluate(
             for info in infos["final_info"]:
                 if "episode" not in info:
                     continue
+                print(
+                    f"eval_episode={len(episodic_returns)}, episodic_return={info['episode']['r']}"
+                )
                 episodic_returns.append(info["episode"]["r"])
                 cube_distances.append(info["cube_distance"])
                 n_cleaned.append(info["n_cleaned"])
@@ -280,9 +277,23 @@ def evaluate(
     )
 
 
-def train(wandb_run: "Run"):
-    args = wandb_run.config
-    run_name = args.run_name
+if __name__ == "__main__":
+    import wandb
+    from tqdm import tqdm
+
+    args = tyro.cli(Args)
+    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{time.monotonic()}"
+
+    # assert args.total_timesteps % args.evaluation_frequency == 0
+
+    wandb_run = wandb.init(
+        project=args.wandb_project_name,
+        entity=args.wandb_entity,
+        config=vars(args),
+        name=run_name,
+        monitor_gym=True,
+        save_code=True,
+    )
 
     # TRY NOT TO MODIFY: seeding
     random.seed(args.seed)
@@ -360,7 +371,7 @@ def train(wandb_run: "Run"):
                 beta=args.pb_beta,
                 beta_increment_per_sampling=args.pb_beta_increment_per_sampling,
             )
-        case "priority_streaming":
+        case "priority_streaming_rewards" | "priority_streaming_td":
             rb = PriorityStreamingBuffer(
                 args.small_buffer_size,
                 envs.single_observation_space,
@@ -448,7 +459,7 @@ def train(wandb_run: "Run"):
                 | "priority_inverse_critic"
             ):
                 rb.add(obs, real_next_obs, actions, rewards, terminations, infos)
-            case "priority_streaming":
+            case "priority_streaming_rewards":
                 r = abs(rewards.mean().item())
                 total_reward += r
                 total_square_reward += r**2
@@ -469,8 +480,14 @@ def train(wandb_run: "Run"):
                         rb.add(
                             obs, real_next_obs, actions, rewards, terminations, infos
                         )
+            case "priority_streaming_td":
+                if global_step <= args.learning_starts:
+                    rb.add(obs, real_next_obs, actions, rewards, terminations, infos)
+                else:
+                    pass
 
         # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
+        shadow_obs = obs
         obs = next_obs
 
         # ALGO LOGIC: training.
@@ -481,7 +498,8 @@ def train(wandb_run: "Run"):
                     | "priority_critic"
                     | "priority_inverse_critic"
                     | "priority_actor_critic"
-                    | "priority_streaming"
+                    | "priority_streaming_rewards"
+                    | "priority_streaming_td"
                 ):
                     data, btch_ind, weights = rb.sample(
                         args.batch_size, critic_prios=True, actor_prios=False
@@ -502,7 +520,7 @@ def train(wandb_run: "Run"):
             qf1_a_values = qf1(data.observations, data.actions).view(-1)
             td_errors = next_q_value - qf1_a_values
             match args.buffer_strategy:
-                case "random" | "priority_actor" | "priority_streaming":
+                case "random" | "priority_actor" | "priority_streaming_rewards":
                     qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
                 case (
                     "priority_critic"
@@ -524,7 +542,18 @@ def train(wandb_run: "Run"):
                     )  # shape [batch]
                     qf1_loss = (weights * per_sample_loss).mean()
                     # qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
-                case "priority_streaming":
+                case "priority_streaming_td":
+                    prios = abs(td_errors.detach().cpu().numpy()) + 1e-6
+                    scaled_prios = prios ** args.alpha_streaming
+                    scaled_sum = scaled_prios.sum()
+                    if scaled_sum <= 0:
+                        # fallback to uniform
+                        probs = np.ones_like(scaled_prios) / len(scaled_prios)
+                    else:
+                        probs = scaled_prios / scaled_sum
+
+                    to_remove_ind = np.random.choice(btch_ind, size=1, replace=False,p=probs)
+                    rb.add(shadow_obs, real_next_obs, actions, rewards, terminations, infos, pos=to_remove_ind.item())
                     qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
                 case _:
                     assert False, "Strategy is invalid"
@@ -562,7 +591,7 @@ def train(wandb_run: "Run"):
 
             if (global_step - args.learning_starts) % args.policy_frequency == 0:
                 match args.buffer_strategy:
-                    case "random" | "priority_critic" | "priority_streaming":
+                    case "random" | "priority_critic" | "priority_streaming_rewards" | "priority_streaming_td":
                         pass
                     case (
                         "priority_actor"
@@ -603,7 +632,7 @@ def train(wandb_run: "Run"):
                         weights = weights.view_as(actor_td_errors)
                         # Apply weights (no .detach() unless you explicitly want to break gradients)
                         actor_td_errors = actor_td_errors * weights
-                    case "priority_streaming":
+                    case "priority_streaming_rewards" | "priority_streaming_td":
                         pass
                     case _:
                         assert False, "Strategy is invalid"
@@ -664,17 +693,16 @@ def train(wandb_run: "Run"):
                     env_id=args.env_id,
                     seed=args.seed + global_step,
                     idx=0,
-                    capture_video=args.capture_video
-                    and (global_step + 1) == args.total_timesteps,
+                    capture_video=(global_step + 1) == args.total_timesteps,
                     run_name=run_name_eval,
                     env_kwargs={
-                        "render_mode": "rgb_array" if args.capture_video else None,
+                        "render_mode": "rgb_array",
                         "max_nr_steps": 500,
                         "nr_cubes": args.nr_cubes,
                     },
                 ),
                 load_model=lambda _, device: actor.to(device),
-                eval_episodes=args.eval_episodes,
+                eval_episodes=20,
                 device=device,
             )
 
@@ -710,22 +738,4 @@ def train(wandb_run: "Run"):
         print(f"model saved to {model_path}")
 
     envs.close()
-
-
-if __name__ == "__main__":
-    import tyro
-
-    args = tyro.cli(Args)
-    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{time.monotonic()}"
-
-    assert args.total_timesteps % args.evaluation_frequency == 0
-
-    with wandb.init(
-        project=args.wandb_project_name,
-        entity=args.wandb_entity,
-        config=dict(**asdict(args), run_name=run_name),
-        name=run_name,
-        monitor_gym=True,
-        save_code=True,
-    ) as wandb_run:
-        train(wandb_run)
+    wandb.finish()

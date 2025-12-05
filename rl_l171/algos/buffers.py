@@ -1289,7 +1289,7 @@ class PriorityStreamingBuffer(BaseBuffer):
         # see https://github.com/DLR-RM/stable-baselines3/issues/284
         self.handle_timeout_termination = handle_timeout_termination
         self.timeouts = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
-        self.valid_incdices: set[int] = set()
+        self.valid_indices: set[int] = set()
 
         if psutil is not None:
             total_memory_usage: float = (
@@ -1319,6 +1319,7 @@ class PriorityStreamingBuffer(BaseBuffer):
         reward: np.ndarray,
         done: np.ndarray,
         infos: list[dict[str, Any]],
+        pos: int | None = None
     ) -> None:
         # Reshape needed when using multiple envs with discrete observations
         # as numpy cannot broadcast (n_discrete,) to (n_discrete, 1)
@@ -1333,7 +1334,8 @@ class PriorityStreamingBuffer(BaseBuffer):
         if self.full:
             # Buffer is full and add the new entry in a random position
             self.pos = random.randint(0, self.buffer_size - 1)
-
+            if pos is not None:
+                self.pos = pos
         self.observations[self.pos] = np.array(obs)
 
         if self.optimize_memory_usage:
@@ -1349,7 +1351,7 @@ class PriorityStreamingBuffer(BaseBuffer):
             self.timeouts[self.pos] = np.array(
                 [info.get("TimeLimit.truncated", False) for info in infos]
             )
-
+        self.valid_indices.add(self.pos)
         self.pos += 1
         if self.pos == self.buffer_size:
             self.full = True
@@ -1357,7 +1359,7 @@ class PriorityStreamingBuffer(BaseBuffer):
 
     def sample(
         self, batch_size: int, critic_prios=False, actor_prios=False
-    ) -> ReplayBufferSamples:
+    ):
         """
         Sample elements from the replay buffer.
         Custom sampling when using memory efficient variant,
@@ -1369,13 +1371,13 @@ class PriorityStreamingBuffer(BaseBuffer):
         :param batch_size: Number of element to sample
         :return:
         """
-        if not self.optimize_memory_usage:
-            return super().sample(batch_size=batch_size)
+        # if not self.optimize_memory_usage:
+        #     return super().sample(batch_size=batch_size)
         # Do not sample the element with index `self.pos` as the transitions is invalid
         # (we use only one array to store `obs` and `next_obs`)
         batch_inds = random.sample(self.valid_indices, batch_size)
-        self.valid_indices.difference_update(batch_inds)
-        return self._get_samples(batch_inds)
+        samples = self._get_samples(batch_inds)
+        return samples, batch_inds, None
 
     def _get_samples(self, batch_inds: np.ndarray) -> ReplayBufferSamples:
         # Sample randomly the env idx
@@ -1400,7 +1402,7 @@ class PriorityStreamingBuffer(BaseBuffer):
             ).reshape(-1, 1),
             self.rewards[batch_inds, env_indices].reshape(-1, 1),
         )
-        return ReplayBufferSamples(*tuple(map(self.to_torch, data))), None, None
+        return ReplayBufferSamples(*tuple(map(self.to_torch, data)))
 
     @staticmethod
     def _maybe_cast_dtype(dtype: np.typing.DTypeLike) -> np.typing.DTypeLike:
